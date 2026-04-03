@@ -133,3 +133,14 @@ pip install tpuz    # GCP TPU pods — manage VM lifecycle
 ## License
 
 MIT
+
+## Claude Code Integration
+
+tpuz includes a `SKILL.md` for [Claude Code](https://claude.ai/claude-code). To enable it:
+
+```bash
+mkdir -p ~/.claude/skills/tpuz-guide
+cp SKILL.md ~/.claude/skills/tpuz-guide/skill.md
+```
+
+This gives Claude Code full knowledge of the tpuz API so it can manage TPU VMs on your behalf.
