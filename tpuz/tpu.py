@@ -34,6 +34,21 @@ class TPUInfo:
     preemptible: bool = False
 
 
+@dataclass
+class SSHResult:
+    """Structured result from SSH command."""
+    stdout: str
+    stderr: str
+    returncode: int
+
+    @property
+    def ok(self):
+        return self.returncode == 0
+
+    def __str__(self):
+        return self.stdout
+
+
 class TPU:
     """
     Manage a GCP TPU VM.
@@ -275,14 +290,22 @@ class TPU:
     # ----------------------------------------------------------------
     # SSH / SCP
     # ----------------------------------------------------------------
-    def ssh(self, cmd, worker=0, timeout=120):
-        """Run a command on the TPU VM."""
+    def ssh(self, cmd, worker=0, timeout=120, structured=False):
+        """
+        Run a command on the TPU VM.
+
+        Args:
+            structured: If True, return SSHResult(stdout, stderr, returncode).
+                       If False (default), return stdout string.
+        """
         args = [
             "compute", "tpus", "tpu-vm", "ssh", self.name,
             f"--zone={self.zone}", f"--worker={worker}",
             "--command", cmd,
         ]
-        result = self._gcloud(args, timeout=timeout)
+        result = self._gcloud(args, timeout=timeout, check=not structured)
+        if structured:
+            return SSHResult(result.stdout.strip(), result.stderr.strip(), result.returncode)
         return result.stdout.strip()
 
     def ssh_all(self, cmd, timeout=120, retries=3):
@@ -331,6 +354,44 @@ class TPU:
             f"--zone={self.zone}", f"--worker={worker}",
         ]
         self._gcloud(args, timeout=300)
+
+    # Public static: worker count (issue #5)
+    @staticmethod
+    def num_workers_for(accelerator):
+        """Return number of VM workers for an accelerator type."""
+        return TPU._worker_count(accelerator)
+
+    def clone_repo(self, url, branch="main", workdir=None, install=False, github_token=None):
+        """
+        Clone (or pull) a git repo on all workers.
+
+        Args:
+            url: Git HTTPS URL
+            branch: Branch name
+            workdir: Remote directory (default: self.workdir)
+            install: If True, pip install -e . after clone
+            github_token: Inject into URL for private repos
+        """
+        workdir = workdir or self.workdir
+        repo_name = url.rstrip("/").split("/")[-1].replace(".git", "")
+
+        if github_token:
+            url = url.replace("https://", f"https://{github_token}@")
+
+        clone_cmd = (
+            f"mkdir -p {workdir} && cd {workdir} && "
+            f"if [ -d {repo_name} ]; then "
+            f"  cd {repo_name} && git pull origin {branch}; "
+            f"else "
+            f"  git clone --branch {branch} {url}; "
+            f"fi"
+        )
+        self.ssh_all(clone_cmd, retries=3)
+        print(f"Repo '{repo_name}' cloned/updated on {self.num_workers} workers")
+
+        if install:
+            self.ssh_all(f"cd {workdir}/{repo_name} && pip install -q -e .", timeout=300)
+            print(f"Installed {repo_name}")
 
     # Aliases for aetherlm compatibility (issue #2)
     def push(self, local, remote, worker=0):

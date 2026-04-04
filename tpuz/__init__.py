@@ -1,7 +1,7 @@
 """
 tpuz — Manage GCP TPU & GPU VMs from your terminal.
 """
-from tpuz.tpu import TPU, TPUInfo
+from tpuz.tpu import TPU, TPUInfo, SSHResult
 from tpuz.gce import GCE
 from tpuz.launcher import Launcher
 from tpuz.gcs import GCS

@@ -295,3 +295,22 @@ class TestAudit:
             assert audit.get_history() == []
         finally:
             audit.AUDIT_PATH = old_path
+
+
+class TestSSHResult:
+    def test_ok(self):
+        from tpuz.tpu import SSHResult
+        r = SSHResult("output", "", 0)
+        assert r.ok
+        assert str(r) == "output"
+
+    def test_failed(self):
+        from tpuz.tpu import SSHResult
+        r = SSHResult("", "error msg", 1)
+        assert not r.ok
+
+class TestNumWorkersFor:
+    def test_static(self):
+        assert TPU.num_workers_for("v4-8") == 1
+        assert TPU.num_workers_for("v4-32") == 4
+        assert TPU.num_workers_for("v5litepod-64") == 8
