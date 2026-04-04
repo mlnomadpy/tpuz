@@ -26,8 +26,8 @@ dev = ["pytest>=8.0"]
 tpuz = "tpuz.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/tahabsn/tpuz"
-Issues = "https://github.com/tahabsn/tpuz/issues"
+Homepage = "https://github.com/mlnomadpy/tpuz"
+Issues = "https://github.com/mlnomadpy/tpuz/issues"
 
 [build-system]
 requires = ["hatchling"]
