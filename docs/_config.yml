@@ -2,11 +2,9 @@ title: tpuz
 description: Manage GCP TPU & GPU VMs from your terminal
 url: "https://www.tahabouhsine.com"
 baseurl: "/tpuz"
-theme: minima
 markdown: kramdown
 
 plugins:
-  - jekyll-feed
   - jekyll-seo-tag
 
 header_pages:

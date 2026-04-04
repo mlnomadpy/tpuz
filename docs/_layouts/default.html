@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page.title }} — tpuz</title>
+    <meta name="description" content="{{ site.description }}">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+    {% seo %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <a href="{{ '/' | relative_url }}" class="site-title">tpuz</a>
+            <p class="site-tagline">{{ site.description }}</p>
+            <nav class="site-nav">
+                <a href="{{ '/getting-started/' | relative_url }}" {% if page.url == '/getting-started/' %}class="active"{% endif %}>Getting Started</a>
+                <a href="{{ '/guide/' | relative_url }}" {% if page.url == '/guide/' %}class="active"{% endif %}>Guide</a>
+                <a href="{{ '/gpu/' | relative_url }}" {% if page.url == '/gpu/' %}class="active"{% endif %}>GPU</a>
+                <a href="{{ '/secrets/' | relative_url }}" {% if page.url == '/secrets/' %}class="active"{% endif %}>Secrets</a>
+                <a href="{{ '/best-practices/' | relative_url }}" {% if page.url == '/best-practices/' %}class="active"{% endif %}>Best Practices</a>
+                <a href="https://github.com/mlnomadpy/tpuz" class="github-link">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        {{ content }}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p>tpuz — Cloud TPU resources provided by Google's <a href="https://sites.research.google/trc/about/">TRC</a> program.</p>
+            <p><a href="https://github.com/mlnomadpy/tpuz">GitHub</a> · <a href="https://pypi.org/project/tpuz/">PyPI</a> · <a href="https://github.com/mlnomadpy/kgz">kgz</a></p>
+        </div>
+    </footer>
+</body>
+</html>
