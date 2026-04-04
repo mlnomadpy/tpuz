@@ -80,6 +80,73 @@ def main():
     s = sub.add_parser("download", help="Download file from VM")
     s.add_argument("name"); s.add_argument("remote"); s.add_argument("local")
 
+    # tpuz verify NAME
+    s = sub.add_parser("verify", help="Verify JAX on all workers")
+    s.add_argument("name")
+
+    # tpuz wait NAME
+    s = sub.add_parser("wait", help="Wait for training to complete")
+    s.add_argument("name")
+    s.add_argument("--timeout", type=float, default=24, help="Timeout in hours")
+
+    # tpuz preflight
+    s = sub.add_parser("preflight", help="Check gcloud config")
+    s.add_argument("name", nargs="?", default="check")
+
+    # tpuz runtimes
+    s = sub.add_parser("runtimes", help="List TPU runtime versions")
+
+    # tpuz repl NAME
+    s = sub.add_parser("repl", help="Interactive Python REPL on worker 0")
+    s.add_argument("name")
+    s.add_argument("--setup", default=None, help="Setup command before REPL")
+
+    # tpuz debug NAME "cmd"
+    s = sub.add_parser("debug", help="Launch with debugpy attached")
+    s.add_argument("name")
+    s.add_argument("command")
+    s.add_argument("--port", type=int, default=5678)
+
+    # tpuz logs-all NAME
+    s = sub.add_parser("logs-all", help="Show logs from ALL workers")
+    s.add_argument("name")
+    s.add_argument("--lines", "-n", type=int, default=20)
+
+    # tpuz health NAME
+    s = sub.add_parser("health", help="Health dashboard for all workers")
+    s.add_argument("name")
+
+    # tpuz scale NAME ACCELERATOR
+    s = sub.add_parser("scale", help="Scale to different accelerator")
+    s.add_argument("name")
+    s.add_argument("accelerator", help="New accelerator (e.g. v4-32)")
+
+    # tpuz cost NAME
+    s = sub.add_parser("cost", help="Show cost estimate")
+    s.add_argument("name")
+
+    # tpuz tunnel NAME REMOTE_PORT [LOCAL_PORT]
+    s = sub.add_parser("tunnel", help="SSH tunnel for TensorBoard/Jupyter")
+    s.add_argument("name"); s.add_argument("remote_port", type=int)
+    s.add_argument("local_port", type=int, nargs="?", default=None)
+
+    # tpuz availability ACCELERATOR
+    s = sub.add_parser("avail", help="Check TPU availability")
+    s.add_argument("accelerator")
+
+    # tpuz collect NAME file1 file2 ...
+    s = sub.add_parser("collect", help="Download artifacts after training")
+    s.add_argument("name"); s.add_argument("files", nargs="+")
+    s.add_argument("-o", "--output", default="./outputs")
+
+    # tpuz run-once NAME "cmd"
+    s = sub.add_parser("run-once", help="Up → setup → run → wait → collect → down")
+    s.add_argument("name"); s.add_argument("command")
+    s.add_argument("-a", "--accelerator", default="v4-8")
+    s.add_argument("--sync", default=None)
+    s.add_argument("--collect", nargs="*", default=None)
+    s.add_argument("--notify", default=None)
+
     # tpuz list
     s = sub.add_parser("list", help="List TPU VMs")
 
@@ -147,6 +214,63 @@ def main():
     elif args.cmd == "download":
         _make_tpu(args.name).scp_from(args.remote, args.local)
         print("Downloaded")
+
+    elif args.cmd == "verify":
+        _make_tpu(args.name).verify()
+
+    elif args.cmd == "wait":
+        _make_tpu(args.name).wait(timeout_hours=args.timeout)
+
+    elif args.cmd == "preflight":
+        _make_tpu(args.name).preflight()
+
+    elif args.cmd == "runtimes":
+        for rt in TPU.list_runtimes(zone=args.zone, project=args.project):
+            print(f"  {rt}")
+
+    elif args.cmd == "repl":
+        _make_tpu(args.name).repl(setup_cmd=args.setup)
+
+    elif args.cmd == "debug":
+        _make_tpu(args.name).debug(args.command, port=args.port)
+
+    elif args.cmd == "logs-all":
+        _make_tpu(args.name).logs_all(lines=args.lines)
+
+    elif args.cmd == "health":
+        _make_tpu(args.name).health_pretty()
+
+    elif args.cmd == "scale":
+        t = _make_tpu(args.name)
+        t.scale(args.accelerator)
+
+    elif args.cmd == "cost":
+        from tpuz.costs import hourly_rate
+        t = _make_tpu(args.name)
+        info = t.info()
+        rate = hourly_rate(t.accelerator, t.preemptible)
+        kind = "spot" if t.preemptible else "on-demand"
+        print(f"Accelerator: {t.accelerator} ({kind})")
+        print(f"Rate:        ${rate:.2f}/hr")
+        if info and info.state == "READY":
+            print(f"State:       RUNNING (costs accumulating)")
+        else:
+            print(f"State:       {info.state if info else 'NOT FOUND'}")
+
+    elif args.cmd == "tunnel":
+        _make_tpu(args.name).tunnel(args.remote_port, args.local_port)
+
+    elif args.cmd == "avail":
+        info = TPU.availability(args.accelerator, zone=args.zone, project=args.project)
+        print(json.dumps(info, indent=2))
+
+    elif args.cmd == "collect":
+        _make_tpu(args.name).collect(args.files, args.output)
+
+    elif args.cmd == "run-once":
+        t = TPU(args.name, args.accelerator, args.zone, args.project)
+        t.run_once(args.command, sync=args.sync,
+                   collect_files=args.collect, notify_url=args.notify)
 
     elif args.cmd == "list":
         vms = TPU.list(zone=args.zone, project=args.project)
