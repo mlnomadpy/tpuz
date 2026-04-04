@@ -332,6 +332,19 @@ class TPU:
         ]
         self._gcloud(args, timeout=300)
 
+    # Aliases for aetherlm compatibility (issue #2)
+    def push(self, local, remote, worker=0):
+        """Alias for scp_to — copy file/dir to VM."""
+        self.scp_to(local, remote, worker)
+
+    def pull(self, remote, local, worker=0):
+        """Alias for scp_from — copy file/dir from VM."""
+        self.scp_from(remote, local, worker)
+
+    def describe(self):
+        """Alias for info() — returns TPUInfo. For aetherlm compatibility."""
+        return self.info()
+
     # ----------------------------------------------------------------
     # Verification & Config
     # ----------------------------------------------------------------

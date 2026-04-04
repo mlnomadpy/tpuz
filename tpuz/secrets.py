@@ -63,17 +63,22 @@ class SecretManager:
     # ----------------------------------------------------------------
     # CRUD
     # ----------------------------------------------------------------
-    def create(self, name, value):
+    def create(self, name, value, update_if_exists=True):
         """
-        Create or update a secret.
+        Create or update a secret. Idempotent by default.
+
+        - If secret doesn't exist → creates it
+        - If secret exists and update_if_exists=True → adds new version
+        - If secret exists and update_if_exists=False → skips silently
 
         Args:
             name: Secret name (e.g. "WANDB_API_KEY")
             value: Secret value
+            update_if_exists: If True, update existing. If False, skip.
         """
-        # Check if exists
         if self.exists(name):
-            # Add new version
+            if not update_if_exists:
+                return  # Skip silently
             proc = subprocess.Popen(
                 ["gcloud", "secrets", "versions", "add", name,
                  f"--project={self.project}", "--data-file=-"],
@@ -82,8 +87,8 @@ class SecretManager:
             proc.communicate(input=value)
             if proc.returncode != 0:
                 raise RuntimeError(f"Failed to update secret: {proc.stderr}")
+            print(f"Secret '{name}' updated (new version)")
         else:
-            # Create new secret
             proc = subprocess.Popen(
                 ["gcloud", "secrets", "create", name,
                  f"--project={self.project}", "--data-file=-"],
@@ -92,7 +97,11 @@ class SecretManager:
             proc.communicate(input=value)
             if proc.returncode != 0:
                 raise RuntimeError(f"Failed to create secret: {proc.stderr}")
-        print(f"Secret '{name}' stored in Cloud Secret Manager")
+            print(f"Secret '{name}' created")
+
+    def ensure(self, name, value):
+        """Idempotent create — creates if missing, skips if exists."""
+        self.create(name, value, update_if_exists=False)
 
     def get(self, name, version="latest"):
         """Read a secret value."""

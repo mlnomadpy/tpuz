@@ -6,11 +6,3 @@ markdown: kramdown
 
 plugins:
   - jekyll-seo-tag
-
-header_pages:
-  - index.md
-  - getting-started.md
-  - guide.md
-  - gpu.md
-  - secrets.md
-  - best-practices.md
