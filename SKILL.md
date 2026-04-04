@@ -1,6 +1,6 @@
-# tpuz — Manage GCP TPU VMs
+# tpuz — Manage GCP TPU & GPU VMs
 
-Use this knowledge when the user wants to create/manage TPU VMs, run training on GCP TPUs, debug multi-host issues, or when you see `import tpuz` or `from tpuz import`.
+Use when user wants to manage TPU/GPU VMs, run training on GCP, or when you see `import tpuz`.
 
 ## Install
 
@@ -8,137 +8,117 @@ Use this knowledge when the user wants to create/manage TPU VMs, run training on
 pip install tpuz
 ```
 
-Requires: `gcloud` CLI installed and authenticated.
-
-## Core API
+## TPU
 
 ```python
 from tpuz import TPU
-
-tpu = TPU("my-tpu", accelerator="v4-8", zone="us-central2-b", preemptible=True)
-
-tpu.preflight()          # Verify gcloud config
-tpu.up()                 # Create VM (idempotent)
-tpu.up_queued()          # Create via Queued Resources (reliable spot)
-tpu.down()               # Delete VM
-info = tpu.info()        # TPUInfo(state, accelerator, ips)
-
-tpu.setup(extra_pip="flaxchat")  # Install JAX[TPU] + deps
-tpu.verify()                      # Verify JAX on all workers
-
-tpu.ssh("echo hello")                 # Single worker
-tpu.ssh_all("echo hello", retries=3)  # All workers parallel with retries
-tpu.scp_to("./src", "/remote/src")
-
-tpu.run("python train.py", sync="./src", env={"KEY": "val"})
-tpu.logs()                    # Stream logs
-tpu.logs_all()                # All workers color-coded
-tpu.wait()                    # Poll for COMPLETE/FAILED
-tpu.health_pretty()           # Worker dashboard
-tpu.watch("python train.py")  # Auto-recover preemption
+tpu = TPU("name", accelerator="v4-8", zone="us-central2-b", preemptible=True)
+tpu.preflight()              # Check gcloud config
+tpu.up()                     # Create (idempotent)
+tpu.up_queued()              # Queued Resources (reliable spot)
+tpu.setup(extra_pip="pkg")   # Install JAX[TPU] + deps
+tpu.verify()                 # Check JAX on all workers
+tpu.run("cmd", sync=".", secrets=["KEY"], env={"K": "V"})
+tpu.logs()                   # Stream (Ctrl-C detach)
+tpu.logs_all()               # All workers color-coded
+tpu.wait()                   # Poll for COMPLETE/FAILED
+tpu.collect(["model.pkl"])   # Download artifacts
+tpu.down()                   # Delete
 ```
 
-## Cost Tracking
+## GPU
 
 ```python
-tpu.cost_summary()  # "$4.12 (2.0h x $2.06/hr v4-8 spot)"
+from tpuz import GCE
+vm = GCE.gpu("name", gpu="a100")  # a100, a100x4, h100x8, t4, l4
+vm.up(); vm.setup(); vm.run("cmd"); vm.logs(); vm.down()
+vm.stop()    # Pause (keeps disk)
+vm.start()   # Resume
 ```
 
-## GCS Checkpoint Sync
+## Secrets (Cloud Secret Manager — ALWAYS prefer this)
+
+```python
+from tpuz import SecretManager
+sm = SecretManager()
+sm.create("WANDB_API_KEY", "key"); sm.grant_tpu_access_all()
+tpu.run("cmd", secrets=["WANDB_API_KEY"])  # Never leaves GCP
+```
+
+## GCS Checkpoints
 
 ```python
 from tpuz import GCS
 gcs = GCS("gs://bucket")
-gcs.upload_checkpoint("./ckpt", "run-01", step=1000)
-gcs.latest_step("run-01")  # 5000
-tpu.run_with_resume("python train.py", gcs=gcs)  # Auto-resume
-```
-
-## SSH Tunnel
-
-```python
-tpu.tunnel(6006)  # TensorBoard: localhost:6006
+gcs.upload_checkpoint("./ckpt", "run", step=1000)
+gcs.latest_step("run")  # 5000
+tpu.run_with_resume("cmd", gcs=gcs)  # Auto-resume
 ```
 
 ## Debugging
 
 ```python
-tpu.repl()                    # Interactive Python on worker 0
-tpu.debug("python train.py")  # VS Code debugpy attach
-tpu.scale("v4-32")            # Scale up accelerator
+tpu.repl()                    # Interactive Python
+tpu.debug("cmd", port=5678)  # VS Code debugpy
+tpu.tunnel(6006)              # TensorBoard
+tpu.health_check()            # Full dashboard
+tpu.training_progress()       # Parse step/loss/lr from log
 ```
 
-## Multi-Zone Failover
+## Cost & Budget
 
 ```python
-tpu = TPU.create_multi_zone("my-tpu", "v4-8",
-    zones=["us-central2-b", "us-central1-a"])
+tpu.cost_summary()                              # $4.12
+tpu.set_budget(50, notify_url=slack)            # Kill at $50
+tpu.schedule("cmd", start_after="22:00", max_cost=10)
+TPU.availability("v4-8")                        # Check price/capacity
 ```
 
-## Run-Once
+## Recovery
 
 ```python
-tpu.run_once("python train.py", sync=".", collect_files=["model.pkl"],
-    gcs=gcs, notify_url="https://hooks.slack.com/...")
-# up -> setup -> resume -> run -> wait -> collect -> notify -> down
+tpu.watch("cmd", max_retries=5)                 # Auto-recover preemption
+tpu.watch_notify("cmd", notify_url=slack)       # + Slack alerts
 ```
 
-## Scheduled Training
+## Scaling
 
 ```python
-tpu.schedule("python train.py", start_after="22:00", max_cost=10.0)
+tpu.scale("v4-32")                              # Upgrade accelerator
+TPU.create_multi_zone("name", "v4-8", zones=[...])  # Multi-zone failover
 ```
 
-## Environment Snapshot
+## Profiles & Dry Run
 
 ```python
-tpu.snapshot_env(gcs=gcs)  # pip freeze -> GCS
-tpu.restore_env(gcs=gcs)   # Restore after preemption
+tpu.save_profile("big-run")                     # Save config
+tpu = TPU.from_profile("big-run", "new-tpu")   # Reuse
+tpu.dry_run("cmd", sync=".", secrets=["KEY"])   # Preview without executing
+```
+
+## Run-Once (Docker-like)
+
+```python
+tpu.run_once("cmd", sync=".", collect_files=["model.pkl"], gcs=gcs, notify_url=slack)
+# up → setup → resume → run → wait → collect → notify → down
+```
+
+## Environment
+
+```python
+tpu.snapshot_env(gcs=gcs)   # pip freeze → GCS
+tpu.restore_env(gcs=gcs)    # Restore after preemption
 ```
 
 ## CLI
 
 ```bash
-tpuz up NAME -a v4-8
-tpuz run NAME "python train.py" --sync=.
-tpuz logs NAME
-tpuz health NAME
-tpuz cost NAME
-tpuz tunnel NAME 6006
-tpuz repl NAME
-tpuz wait NAME
-tpuz run-once NAME "python train.py" --sync=. --notify=URL
-tpuz train NAME "python train.py" -a v4-8 --recover --teardown
+tpuz up/down/status/list/preflight/avail
+tpuz setup/verify/run/logs/logs-all/kill/wait/collect
+tpuz repl/debug/health/tunnel/scale/cost
+tpuz watch/train/run-once
 ```
 
-## Source
+## TPU Types
 
-- Repo: `/Users/tahabsn/Documents/GitHub/tpuz`
-- 1,896 lines, 33 tests, zero Python deps
-
-## Google Cloud Secret Manager
-
-```python
-from tpuz import SecretManager
-
-# Store secrets in GCP (one-time)
-sm = SecretManager(project="my-project")
-sm.create("WANDB_API_KEY", "your-key")
-sm.create("HF_TOKEN", "hf_...")
-sm.grant_tpu_access_all()  # Grant VM access via IAM
-
-# List/read/delete
-sm.list()                    # ["WANDB_API_KEY", "HF_TOKEN"]
-sm.get("WANDB_API_KEY")     # "your-key"
-sm.exists("WANDB_API_KEY")  # True
-sm.delete("OLD_KEY")
-
-# Training: secrets loaded server-side, never leave GCP
-tpu.run("python train.py", secrets=["WANDB_API_KEY", "HF_TOKEN"])
-# Or load manually:
-tpu.load_secrets(["WANDB_API_KEY", "HF_TOKEN"])
-```
-
-IMPORTANT: Always prefer `secrets=["KEY"]` over `env={"KEY": "val"}`.
-The `secrets` param uses Cloud Secret Manager (server-side, never leaves GCP).
-The `env` param writes a .env file via SCP (encrypted but secrets transit your machine).
+v4-8 ($2.06/hr), v4-32 ($8.24), v5litepod-8 ($9.60), v5litepod-64 ($76.80), v6e-8 ($9.60)
