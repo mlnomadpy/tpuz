@@ -222,3 +222,76 @@ class TestGCE:
     def test_preemptible_default(self):
         from tpuz.gce import GCE
         assert GCE("x").preemptible is True
+
+
+class TestHealthParser:
+    def test_parse_step_loss(self):
+        from tpuz.health import parse_training_progress
+        m = parse_training_progress("step 100 | loss 3.71 | dt 0.55s | tok/s 56,000")
+        assert m["step"] == 100
+        assert m["loss"] == 3.71
+        assert m["tok_per_sec"] == 56000
+
+    def test_parse_total_steps(self):
+        from tpuz.health import parse_training_progress
+        m = parse_training_progress("step 100/5000 (2.0%) | loss 3.71")
+        assert m["step"] == 100
+        assert m["total_steps"] == 5000
+        assert m["percent"] == 2.0
+
+    def test_parse_lr(self):
+        from tpuz.health import parse_training_progress
+        m = parse_training_progress("lr=3e-4 mfu=45.2")
+        assert m["lr"] == 3e-4
+        assert m["mfu"] == 45.2
+
+    def test_parse_empty(self):
+        from tpuz.health import parse_training_progress
+        assert parse_training_progress("nothing here") == {}
+
+    def test_eta(self):
+        from tpuz.health import estimate_eta
+        eta = estimate_eta({"step": 100, "total_steps": 1000, "dt": 0.5})
+        assert eta == 450.0  # 900 steps * 0.5s
+
+
+class TestProfiles:
+    def test_save_load(self):
+        import tempfile, os
+        from tpuz import profiles
+        old_dir = profiles.PROFILE_DIR
+        profiles.PROFILE_DIR = tempfile.mkdtemp()
+        try:
+            profiles.save_profile("test", {"accelerator": "v4-8", "zone": "us-central2-b"})
+            loaded = profiles.load_profile("test")
+            assert loaded["accelerator"] == "v4-8"
+            assert "test" in [p["name"] for p in profiles.list_profiles()]
+            profiles.delete_profile("test")
+            assert profiles.load_profile("test") is None
+        finally:
+            profiles.PROFILE_DIR = old_dir
+
+    def test_load_missing(self):
+        from tpuz.profiles import load_profile
+        assert load_profile("nonexistent_profile_xyz") is None
+
+
+class TestAudit:
+    def test_log_and_read(self):
+        import tempfile
+        from tpuz import audit
+        old_path = audit.AUDIT_PATH
+        audit.AUDIT_PATH = tempfile.mktemp(suffix=".jsonl")
+        try:
+            audit.log_action("up", "test-tpu", {"accelerator": "v4-8"})
+            audit.log_action("down", "test-tpu")
+            history = audit.get_history()
+            assert len(history) == 2
+            assert history[0]["action"] == "up"
+            assert history[1]["action"] == "down"
+            history_filtered = audit.get_history("test-tpu")
+            assert len(history_filtered) == 2
+            audit.clear_history()
+            assert audit.get_history() == []
+        finally:
+            audit.AUDIT_PATH = old_path

@@ -1101,5 +1101,83 @@ class TPU:
         print(f"Final: {cost.summary()}")
         return cost.cost
 
+
+    # ----------------------------------------------------------------
+    # Dry run
+    # ----------------------------------------------------------------
+    def dry_run(self, cmd, sync=None, secrets=None, env=None):
+        """Print gcloud commands without executing."""
+        print("=== DRY RUN ===\n")
+        args = f"gcloud compute tpus tpu-vm create {self.name} --zone={self.zone} --accelerator-type={self.accelerator} --version={self.runtime}"
+        if self.preemptible: args += " --preemptible"
+        print(f"# Create\n  {args}\n")
+        if sync: print(f"# Upload\n  gcloud compute tpus tpu-vm scp {sync} {self.name}:{self.workdir} --zone={self.zone}\n")
+        if secrets:
+            print("# Secrets")
+            for s in secrets: print(f"  export {s}=$(gcloud secrets versions access latest --secret={s})")
+            print()
+        print(f"# Run\n  cd {self.workdir} && nohup {cmd} > {self.workdir}/{self.log_file} 2>&1 &\n")
+        print(f"# Teardown\n  gcloud compute tpus tpu-vm delete {self.name} --zone={self.zone} --quiet")
+
+    # ----------------------------------------------------------------
+    # Health monitor
+    # ----------------------------------------------------------------
+    def monitor(self):
+        """Get a HealthMonitor for this TPU."""
+        from tpuz.health import HealthMonitor
+        return HealthMonitor(self)
+
+    def health_check(self):
+        """Full health check with formatted output."""
+        return self.monitor().check_pretty()
+
+    def training_progress(self):
+        """Parse training metrics from latest log."""
+        return self.monitor().parse_latest_log()
+
+    # ----------------------------------------------------------------
+    # Profiles
+    # ----------------------------------------------------------------
+    def save_profile(self, profile_name):
+        """Save config as reusable profile."""
+        from tpuz.profiles import save_profile
+        config = {"accelerator": self.accelerator, "zone": self.zone,
+                  "project": self.project, "preemptible": self.preemptible}
+        save_profile(profile_name, config)
+        print(f"Profile \'{profile_name}\' saved")
+
+    @classmethod
+    def from_profile(cls, profile_name, tpu_name):
+        """Create TPU from saved profile."""
+        from tpuz.profiles import load_profile
+        config = load_profile(profile_name)
+        if not config: raise FileNotFoundError(f"No profile: {profile_name}")
+        return cls(tpu_name, **config)
+
+    # ----------------------------------------------------------------
+    # Budget alerts
+    # ----------------------------------------------------------------
+    def set_budget(self, max_usd, alert_at=None, notify_url=None, poll=60):
+        """Watch cost and enforce budget. Alert at threshold, kill at max."""
+        from tpuz.notify import notify
+        if alert_at is None: alert_at = max_usd * 0.8
+        cost = self.cost(); cost.start(); alerted = False
+        print(f"Budget: ${max_usd:.2f} (alert at ${alert_at:.2f})")
+        while self.is_running():
+            time.sleep(poll)
+            c = cost.cost
+            if c >= max_usd:
+                msg = f"Budget exceeded: {cost.summary()}"; print(msg); notify(notify_url, msg); self.kill(); break
+            if c >= alert_at and not alerted:
+                msg = f"Budget alert: {cost.summary()}"; print(msg); notify(notify_url, msg); alerted = True
+        cost.stop(); return cost.cost
+
+    # ----------------------------------------------------------------
+    # Audit
+    # ----------------------------------------------------------------
+    def _audit(self, action, details=None):
+        from tpuz.audit import log_action
+        log_action(action, self.name, details)
+
     def __repr__(self):
         return f"TPU(name={self.name!r}, accelerator={self.accelerator!r}, zone={self.zone!r})"
