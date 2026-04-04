@@ -1,6 +1,6 @@
 [project]
 name = "tpuz"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Manage GCP TPU VMs from your terminal — create, run, recover, teardown"
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,9 @@ tpuz = "tpuz.cli:main"
 Homepage = "https://github.com/mlnomadpy/tpuz"
 Issues = "https://github.com/mlnomadpy/tpuz/issues"
 
+[tool.hatch.version]
+source = "vcs"
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"

@@ -11,7 +11,12 @@ from tpuz.health import HealthMonitor, parse_training_progress
 from tpuz.profiles import save_profile, load_profile, list_profiles
 from tpuz.audit import log_action, get_history
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version
+    __version__ = version("tpuz")
+except Exception:
+    __version__ = "0.0.0.dev"
+
 __all__ = [
     "TPU", "TPUInfo", "GCE", "Launcher", "GCS",
     "CostTracker", "hourly_rate", "SecretManager",
