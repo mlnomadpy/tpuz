@@ -176,3 +176,49 @@ class TestNewCLI:
 
     def test_wait_help(self):
         assert self._cli("wait", "--help").returncode == 0
+
+
+class TestSecretManager:
+    def test_load_env_command(self):
+        from tpuz.secrets import SecretManager
+        cmd = SecretManager.load_env_command(["WANDB_API_KEY", "HF_TOKEN"], project="my-proj")
+        assert "WANDB_API_KEY" in cmd
+        assert "HF_TOKEN" in cmd
+        assert "gcloud secrets versions access" in cmd
+        assert "--project=my-proj" in cmd
+
+    def test_load_env_command_no_project(self):
+        from tpuz.secrets import SecretManager
+        cmd = SecretManager.load_env_command(["KEY"])
+        assert "KEY" in cmd
+        assert "--project" not in cmd
+
+
+class TestGCE:
+    def test_init(self):
+        from tpuz.gce import GCE
+        vm = GCE("test", machine_type="n1-standard-8", zone="us-central1-a")
+        assert vm.name == "test"
+        assert vm.machine_type == "n1-standard-8"
+
+    def test_gpu_shorthand(self):
+        from tpuz.gce import GCE
+        vm = GCE.gpu("test", gpu="a100")
+        assert "a100" in vm.gpu
+        assert vm.gpu_count == 1
+
+    def test_gpu_multi(self):
+        from tpuz.gce import GCE
+        vm = GCE.gpu("test", gpu="a100x4")
+        assert vm.gpu_count == 4
+
+    def test_repr(self):
+        from tpuz.gce import GCE
+        vm = GCE.gpu("test", gpu="a100")
+        r = repr(vm)
+        assert "test" in r
+        assert "gpu" in r
+
+    def test_preemptible_default(self):
+        from tpuz.gce import GCE
+        assert GCE("x").preemptible is True

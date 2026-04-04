@@ -422,15 +422,35 @@ class TPU:
         raise TimeoutError(f"Training not done after {timeout_hours}h")
 
     # ----------------------------------------------------------------
+    # Cloud Secrets
+    # ----------------------------------------------------------------
+    def load_secrets(self, secret_names, project=None):
+        """
+        Load secrets from Google Cloud Secret Manager as env vars on the VM.
+        Secrets never leave GCP — the VM reads them via its service account.
+
+        Args:
+            secret_names: List of secret names (e.g. ["WANDB_API_KEY", "HF_TOKEN"])
+            project: GCP project (default: self.project)
+        """
+        from tpuz.secrets import SecretManager
+        cmd = SecretManager.load_env_command(secret_names, project or self.project)
+        # Write the load command to a persistent .env file on all workers
+        script = f'echo "{cmd}" > {self.workdir}/.load_secrets.sh && source {self.workdir}/.load_secrets.sh'
+        self.ssh_all(script, timeout=30)
+        print(f"Loaded {len(secret_names)} secrets from Cloud Secret Manager")
+
+    # ----------------------------------------------------------------
     # Training
     # ----------------------------------------------------------------
-    def run(self, cmd, env=None, sync=None):
+    def run(self, cmd, env=None, secrets=None, sync=None):
         """
         Launch a command in detached mode (nohup).
 
         Args:
             cmd: Command to run (e.g. "python train.py")
-            env: Dict of env vars to export
+            env: Dict of env vars (written to .env file, not command line)
+            secrets: List of Cloud Secret Manager names to load on VM
             sync: Local directory to upload before running
         """
         if sync:
@@ -440,7 +460,11 @@ class TPU:
                 for w in range(1, self.num_workers):
                     self.scp_to(sync, self.workdir, worker=w)
 
-        # Write secrets to a .env file instead of command line (avoids ps/history leak)
+        # Load secrets from Cloud Secret Manager (preferred — never leaves GCP)
+        if secrets:
+            self.load_secrets(secrets)
+
+        # Write local env vars to .env file (fallback — avoids ps/history leak)
         env_str = ""
         if env:
             import tempfile

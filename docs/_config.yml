@@ -1,0 +1,18 @@
+title: tpuz
+description: Manage GCP TPU & GPU VMs from your terminal
+url: ""
+baseurl: ""
+theme: minima
+markdown: kramdown
+
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+header_pages:
+  - index.md
+  - getting-started.md
+  - guide.md
+  - gpu.md
+  - secrets.md
+  - best-practices.md

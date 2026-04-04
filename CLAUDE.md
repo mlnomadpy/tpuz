@@ -2,45 +2,50 @@
 
 ## What This Is
 
-tpuz manages GCP TPU VMs via gcloud CLI. Create, run, monitor, recover, teardown — all from Python or terminal.
+tpuz manages GCP TPU VMs via gcloud CLI. Create, run, debug, monitor, recover, teardown.
 
 ## Key Files
 
-- `tpuz/tpu.py` — Core `TPU` class (lifecycle, SSH, multi-host, preemption recovery)
-- `tpuz/launcher.py` — `Launcher` for one-command training
-- `tpuz/cli.py` — CLI with 12 commands
+- `tpuz/tpu.py` — Core `TPU` class (lifecycle, SSH, multi-host, debugging, secrets, costs)
+- `tpuz/gcs.py` — GCS checkpoint sync
+- `tpuz/secrets.py` — Google Cloud Secret Manager integration
+- `tpuz/costs.py` — Cost tracking with TPU hourly rates
+- `tpuz/notify.py` — Slack/webhook notifications
+- `tpuz/launcher.py` — One-command training orchestrator
+- `tpuz/cli.py` — CLI with 25+ commands
 
 ## Quick Usage
 
 ```python
-from tpuz import TPU
+from tpuz import TPU, GCS, SecretManager
 
 tpu = TPU("my-tpu", accelerator="v4-8")
-tpu.up()                           # Create VM
-tpu.setup()                        # Install JAX
-tpu.run("python train.py")         # Launch training
-tpu.logs()                         # Stream logs
-tpu.down()                         # Delete VM
+tpu.up()
+tpu.setup()
+tpu.run("python train.py", secrets=["WANDB_API_KEY"], sync="./src")
+tpu.logs()
+tpu.cost_summary()
+tpu.down()
 ```
 
-## One-liner
+## Secrets (IMPORTANT)
 
+Always use Cloud Secret Manager, not env vars:
 ```python
-from tpuz import Launcher
-Launcher("my-tpu", "v4-8").train("python train.py", sync="./src", auto_recover=True)
+# GOOD: secrets never leave GCP
+tpu.run("python train.py", secrets=["WANDB_API_KEY", "HF_TOKEN"])
+
+# OK for quick tests only
+tpu.run("python train.py", env={"KEY": "val"})
 ```
 
-## CLI
+## Docs
+
+- `docs/secrets.md` — Full secrets & security guide
+- `docs/best-practices.md` — Training workflow, costs, multi-host tips
+
+## Running Tests
 
 ```bash
-tpuz up my-tpu -a v4-8
-tpuz run my-tpu "python train.py" --sync=./src
-tpuz logs my-tpu
-tpuz down my-tpu
-tpuz train my-tpu "python train.py" -a v4-8 --sync=. --recover
+pytest tests/ -v  # 35 tests, no GCP needed
 ```
-
-## Requires
-
-- `gcloud` CLI installed and authenticated
-- GCP project with TPU quota

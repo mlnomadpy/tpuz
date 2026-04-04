@@ -115,3 +115,30 @@ tpuz train NAME "python train.py" -a v4-8 --recover --teardown
 
 - Repo: `/Users/tahabsn/Documents/GitHub/tpuz`
 - 1,896 lines, 33 tests, zero Python deps
+
+## Google Cloud Secret Manager
+
+```python
+from tpuz import SecretManager
+
+# Store secrets in GCP (one-time)
+sm = SecretManager(project="my-project")
+sm.create("WANDB_API_KEY", "your-key")
+sm.create("HF_TOKEN", "hf_...")
+sm.grant_tpu_access_all()  # Grant VM access via IAM
+
+# List/read/delete
+sm.list()                    # ["WANDB_API_KEY", "HF_TOKEN"]
+sm.get("WANDB_API_KEY")     # "your-key"
+sm.exists("WANDB_API_KEY")  # True
+sm.delete("OLD_KEY")
+
+# Training: secrets loaded server-side, never leave GCP
+tpu.run("python train.py", secrets=["WANDB_API_KEY", "HF_TOKEN"])
+# Or load manually:
+tpu.load_secrets(["WANDB_API_KEY", "HF_TOKEN"])
+```
+
+IMPORTANT: Always prefer `secrets=["KEY"]` over `env={"KEY": "val"}`.
+The `secrets` param uses Cloud Secret Manager (server-side, never leaves GCP).
+The `env` param writes a .env file via SCP (encrypted but secrets transit your machine).
