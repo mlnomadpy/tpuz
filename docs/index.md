@@ -62,8 +62,11 @@ tpu.up_queued()    # Queued Resources (waits for capacity — better for spot)
 ```python
 tpu.setup()                          # JAX[TPU] + common deps
 tpu.setup(extra_pip="flaxchat")      # + custom packages
+tpu.setup(python_version="3.11")     # Install Python 3.11 if missing
 tpu.verify()                         # Confirm JAX works on all workers
 ```
+
+`setup()` automatically waits for SSH readiness and apt lock release on fresh VMs — no need to `time.sleep()` after `up()`.
 
 ## Step 4: Upload Code & Run
 
@@ -106,6 +109,7 @@ tpu.down()                     # Delete VM
 tpu.down_queued()              # Delete QR + VM
 tpu.info()                     # TPUInfo(state, accelerator, ips)
 tpu.describe()                 # Alias for info()
+tpu.wait_for_ssh()             # Wait until SSH is ready
 tpu.setup(extra_pip="pkg")     # Install JAX[TPU] + deps
 tpu.verify()                   # Check JAX on all workers
 ```
@@ -116,12 +120,24 @@ tpu.verify()                   # Check JAX on all workers
 # SSH — returns stdout string by default
 output = tpu.ssh("echo hello")
 
+# Custom timeout (default: ssh_timeout from __init__, default 120s)
+output = tpu.ssh("long-command", timeout=600)
+
+# Disable timeout entirely
+output = tpu.ssh("very-long-command", timeout=None)
+
+# Set default SSH timeout at init
+tpu = TPU("my-tpu", accelerator="v4-8", ssh_timeout=300)
+
 # Structured result with stderr and returncode
 result = tpu.ssh("cat /tmp/log", structured=True)
 result.stdout       # "log content..."
 result.stderr       # ""
 result.returncode   # 0
 result.ok           # True
+
+# Wait for SSH readiness (called automatically by setup())
+tpu.wait_for_ssh(timeout=180)
 
 # All workers in parallel (with per-worker retries)
 outputs = tpu.ssh_all("hostname", retries=3)

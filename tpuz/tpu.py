@@ -73,6 +73,7 @@ class TPU:
         project: str = None,
         preemptible: bool = True,
         runtime: str = None,
+        ssh_timeout: int = 120,
     ):
         self.name = name
         self.accelerator = accelerator
@@ -83,6 +84,7 @@ class TPU:
         self.num_workers = self._worker_count(accelerator)
         self.workdir = f"/home/{os.environ.get('USER', 'user')}/workdir"
         self.log_file = "train.log"
+        self.ssh_timeout = ssh_timeout
 
     @staticmethod
     def _detect_runtime(accelerator):
@@ -295,14 +297,18 @@ class TPU:
     # ----------------------------------------------------------------
     # SSH / SCP
     # ----------------------------------------------------------------
-    def ssh(self, cmd, worker=0, timeout=120, structured=False):
+    def ssh(self, cmd, worker=0, timeout="default", structured=False):
         """
         Run a command on the TPU VM.
 
         Args:
+            timeout: Seconds before timeout. "default" uses self.ssh_timeout.
+                     None disables timeout entirely.
             structured: If True, return SSHResult(stdout, stderr, returncode).
                        If False (default), return stdout string.
         """
+        if timeout == "default":
+            timeout = self.ssh_timeout
         args = [
             "compute", "tpus", "tpu-vm", "ssh", self.name,
             f"--zone={self.zone}", f"--worker={worker}",
@@ -313,8 +319,10 @@ class TPU:
             return SSHResult(result.stdout.strip(), result.stderr.strip(), result.returncode)
         return result.stdout.strip()
 
-    def ssh_all(self, cmd, timeout=120, retries=3):
+    def ssh_all(self, cmd, timeout="default", retries=3):
         """Run on all workers in parallel with per-worker retries."""
+        if timeout == "default":
+            timeout = self.ssh_timeout
         if self.num_workers == 1:
             return [self.ssh(cmd, 0, timeout)]
 
@@ -616,36 +624,90 @@ class TPU:
             pass
 
     # ----------------------------------------------------------------
+    # SSH readiness
+    # ----------------------------------------------------------------
+    def wait_for_ssh(self, timeout=180, poll=5):
+        """
+        Wait until SSH is accepting connections on worker 0.
+
+        Fresh VMs may take 30-60s after GCP reports READY before SSH works.
+        Called automatically by setup().
+
+        Args:
+            timeout: Max seconds to wait (default 180).
+            poll: Seconds between retries.
+        """
+        deadline = time.time() + timeout
+        attempt = 0
+        while time.time() < deadline:
+            attempt += 1
+            try:
+                result = self.ssh("echo ready", worker=0, timeout=15, structured=True)
+                if result.ok and "ready" in result.stdout:
+                    if attempt > 1:
+                        print(f"  SSH ready after {attempt} attempts")
+                    return
+            except Exception:
+                pass
+            remaining = int(deadline - time.time())
+            if remaining > 0:
+                print(f"  Waiting for SSH... ({remaining}s remaining)")
+                time.sleep(poll)
+        raise TimeoutError(f"SSH not ready after {timeout}s")
+
+    # ----------------------------------------------------------------
     # Setup
     # ----------------------------------------------------------------
     def setup(self, extra_pip="", python_version="3.11"):
         """
         Install JAX[TPU] and common deps.
         Detects Python version and installs if needed.
+        Waits for SSH readiness before starting.
         """
         print("Setting up environment...")
 
-        # Check Python version, install if needed
-        print(f"  Checking Python {python_version}...")
-        py_check = self.ssh(f"python{python_version} --version 2>/dev/null || echo MISSING", timeout=15)
+        # Wait for SSH to be ready (issue #7)
+        print("  Waiting for SSH readiness...")
+        self.wait_for_ssh()
+
+        # Wait for dpkg lock to release (fresh VMs run unattended-upgrades)
+        print("  Waiting for apt lock...")
+        self.ssh_all(
+            "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done",
+            timeout=120,
+        )
+
+        py = f"python{python_version}"
+
+        # Check Python version, install if needed (issue #8)
+        print(f"  Checking {py}...")
+        py_check = self.ssh(f"{py} --version 2>/dev/null || echo MISSING", timeout=30)
         if "MISSING" in py_check:
-            print(f"  Installing Python {python_version}...")
+            print(f"  Installing {py} (this may take a few minutes)...")
             self.ssh_all(
-                f"sudo apt-get update -qq && sudo apt-get install -y -qq python{python_version} python{python_version}-venv python{python_version}-dev > /dev/null 2>&1 || "
-                f"echo 'apt failed, trying pixi...' && curl -fsSL https://pixi.sh/install.sh | bash && export PATH=$HOME/.pixi/bin:$PATH && pixi global install python",
-                timeout=300,
+                f"sudo apt-get update -qq && "
+                f"sudo apt-get install -y -qq {py} {py}-venv {py}-dev > /dev/null 2>&1",
+                timeout=600,
+            )
+            # Ensure pip is available for this Python version
+            self.ssh_all(
+                f"{py} -m ensurepip --upgrade 2>/dev/null || "
+                f"curl -sS https://bootstrap.pypa.io/get-pip.py | sudo {py}",
+                timeout=120,
             )
 
+        # Use the target Python's pip for all installs
+        pip = f"{py} -m pip"
+
         cmds = [
-            "sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip > /dev/null 2>&1",
-            "pip install -q 'jax[tpu]' -f https://storage.googleapis.com/jax-releases/libtpu_releases.html",
-            "pip install -q flax optax orbax-checkpoint datasets pyarrow pyyaml wandb",
+            f"{pip} install -q 'jax[tpu]' -f https://storage.googleapis.com/jax-releases/libtpu_releases.html",
+            f"{pip} install -q flax optax orbax-checkpoint datasets pyarrow pyyaml wandb",
         ]
         if extra_pip:
-            cmds.append(f"pip install -q {extra_pip}")
+            cmds.append(f"{pip} install -q {extra_pip}")
         for cmd in cmds:
-            print(f"  {cmd[:60]}...")
-            self.ssh_all(cmd, timeout=300)
+            print(f"  {cmd[:70]}...")
+            self.ssh_all(cmd, timeout=600)
         print("Setup done!")
 
     # ----------------------------------------------------------------

@@ -309,6 +309,19 @@ class TestSSHResult:
         r = SSHResult("", "error msg", 1)
         assert not r.ok
 
+class TestSSHTimeout:
+    def test_default_timeout(self):
+        t = TPU("test", accelerator="v4-8")
+        assert t.ssh_timeout == 120
+
+    def test_custom_timeout(self):
+        t = TPU("test", accelerator="v4-8", ssh_timeout=300)
+        assert t.ssh_timeout == 300
+
+    def test_none_timeout(self):
+        t = TPU("test", accelerator="v4-8", ssh_timeout=None)
+        assert t.ssh_timeout is None
+
 class TestNumWorkersFor:
     def test_static(self):
         assert TPU.num_workers_for("v4-8") == 1
