@@ -695,7 +695,7 @@ class TPU:
 
         print(f"  Installing packages with uv...")
         self.ssh_all(
-            f"{uv} pip install --python {python_version} {pkgs}",
+            f"{uv} pip install --system --python {python_version} {pkgs}",
             timeout=300,
         )
         print("Setup done!")
