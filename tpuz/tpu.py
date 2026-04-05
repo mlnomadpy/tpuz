@@ -278,7 +278,7 @@ class TPU:
             zone=self.zone,
             external_ips=ext_ips,
             internal_ips=int_ips,
-            preemptible="PREEMPTIBLE" in data.get("schedulingConfig", {}).get("preemptible", ""),
+            preemptible=bool(data.get("schedulingConfig", {}).get("preemptible", False)),
         )
 
     def _wait_ready(self, timeout=600, poll=15):
