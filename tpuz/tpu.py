@@ -260,9 +260,14 @@ class TPU:
         data = json.loads(result.stdout)
         ext_ips, int_ips = [], []
         for ep in data.get("networkEndpoints", []):
-            for ap in ep.get("accessConfig", []):
-                if "externalIp" in ap:
-                    ext_ips.append(ap["externalIp"])
+            # accessConfig can be a list of dicts, a single dict, or absent
+            ac = ep.get("accessConfig", [])
+            if isinstance(ac, dict):
+                ac = [ac]
+            if isinstance(ac, list):
+                for item in ac:
+                    if isinstance(item, dict) and "externalIp" in item:
+                        ext_ips.append(item["externalIp"])
             if "ipAddress" in ep:
                 int_ips.append(ep["ipAddress"])
 
