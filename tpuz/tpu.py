@@ -686,16 +686,16 @@ class TPU:
         self.ssh_all(f"{uv} python install {python_version}", timeout=120)
 
         # Single fast install — uv resolves everything together (no build isolation conflicts)
-        pkgs = (
-            f"'jax[tpu]' -f https://storage.googleapis.com/jax-releases/libtpu_releases.html "
-            f"flax optax orbax-checkpoint datasets pyarrow pyyaml wandb"
-        )
+        jax_find_links = "https://storage.googleapis.com/jax-releases/libtpu_releases.html"
+        pkgs = "flax optax orbax-checkpoint datasets pyarrow pyyaml wandb"
         if extra_pip:
             pkgs += f" {extra_pip}"
 
         print(f"  Installing packages with uv...")
         self.ssh_all(
-            f"{uv} pip install --system --python {python_version} {pkgs}",
+            f'{uv} pip install --system --python {python_version} '
+            f'--find-links {jax_find_links} '
+            f'"jax[tpu]" {pkgs}',
             timeout=300,
         )
         print("Setup done!")
