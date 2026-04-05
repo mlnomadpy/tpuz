@@ -66,7 +66,7 @@ tpu.setup(python_version="3.11")     # Install Python 3.11 if missing
 tpu.verify()                         # Confirm JAX works on all workers
 ```
 
-`setup()` automatically waits for SSH readiness and apt lock release on fresh VMs — no need to `time.sleep()` after `up()`.
+`setup()` uses **uv** (10-50x faster than pip) and automatically waits for SSH readiness on fresh VMs — no need to `time.sleep()` after `up()`.
 
 ## Step 4: Upload Code & Run
 

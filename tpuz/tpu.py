@@ -660,7 +660,7 @@ class TPU:
     # ----------------------------------------------------------------
     def setup(self, extra_pip="", python_version="3.11"):
         """
-        Install JAX[TPU] and common deps.
+        Install JAX[TPU] and common deps using uv (10-50x faster than pip).
         Detects Python version and installs if needed.
         Waits for SSH readiness before starting.
         """
@@ -670,44 +670,34 @@ class TPU:
         print("  Waiting for SSH readiness...")
         self.wait_for_ssh()
 
-        # Wait for dpkg lock to release (fresh VMs run unattended-upgrades)
-        print("  Waiting for apt lock...")
+        # Install uv on all workers (issue #9)
+        print("  Installing uv...")
         self.ssh_all(
-            "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done",
-            timeout=120,
+            "command -v uv >/dev/null 2>&1 || "
+            "(curl -LsSf https://astral.sh/uv/install.sh | sh && "
+            'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc)',
+            timeout=60,
         )
+        uv = "$HOME/.local/bin/uv"
 
+        # Install Python version via uv (no apt lock needed)
         py = f"python{python_version}"
+        print(f"  Ensuring {py} via uv...")
+        self.ssh_all(f"{uv} python install {python_version}", timeout=120)
 
-        # Check Python version, install if needed (issue #8)
-        print(f"  Checking {py}...")
-        py_check = self.ssh(f"{py} --version 2>/dev/null || echo MISSING", timeout=30)
-        if "MISSING" in py_check:
-            print(f"  Installing {py} (this may take a few minutes)...")
-            self.ssh_all(
-                f"sudo apt-get update -qq && "
-                f"sudo apt-get install -y -qq {py} {py}-venv {py}-dev > /dev/null 2>&1",
-                timeout=600,
-            )
-            # Ensure pip is available for this Python version
-            self.ssh_all(
-                f"{py} -m ensurepip --upgrade 2>/dev/null || "
-                f"curl -sS https://bootstrap.pypa.io/get-pip.py | sudo {py}",
-                timeout=120,
-            )
-
-        # Use the target Python's pip for all installs
-        pip = f"{py} -m pip"
-
-        cmds = [
-            f"{pip} install -q 'jax[tpu]' -f https://storage.googleapis.com/jax-releases/libtpu_releases.html",
-            f"{pip} install -q flax optax orbax-checkpoint datasets pyarrow pyyaml wandb",
-        ]
+        # Single fast install — uv resolves everything together (no build isolation conflicts)
+        pkgs = (
+            f"'jax[tpu]' -f https://storage.googleapis.com/jax-releases/libtpu_releases.html "
+            f"flax optax orbax-checkpoint datasets pyarrow pyyaml wandb"
+        )
         if extra_pip:
-            cmds.append(f"{pip} install -q {extra_pip}")
-        for cmd in cmds:
-            print(f"  {cmd[:70]}...")
-            self.ssh_all(cmd, timeout=600)
+            pkgs += f" {extra_pip}"
+
+        print(f"  Installing packages with uv...")
+        self.ssh_all(
+            f"{uv} pip install --python {python_version} {pkgs}",
+            timeout=300,
+        )
         print("Setup done!")
 
     # ----------------------------------------------------------------
